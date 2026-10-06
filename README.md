@@ -11,6 +11,14 @@ b站H5播放器快速操作
 - [OpenUserJS](https://openuserjs.org/scripts/jeayu/bilibili-H5%E6%92%AD%E6%94%BE%E5%99%A8%E5%BF%AB%E6%8D%B7%E6%93%8D%E4%BD%9C)
 - [GreasyFork](https://greasyfork.org/zh-CN/scripts/26939-bilibili-h5%E6%92%AD%E6%94%BE%E5%99%A8%E5%BF%AB%E6%8D%B7%E6%93%8D%E4%BD%9C)
 
+## 本地开发与验证
+
+修改后将 `bilibili-quickdo.user.js` 导入用户脚本管理器，更新本地副本并刷新视频页面，避免同时启用多个副本。脚本会在播放器就绪后初始化，不依赖页面顶部导航栏；视频节点替换后会重新绑定事件。
+
+- `node --check bilibili-quickdo.user.js`：检查 JavaScript 语法。
+- `node tests/player-init.test.cjs`：运行初始化回归检查，覆盖异步加载、视频节点替换、事件去重和输入框焦点保护。
+- 浏览器中手动检查设置面板（反引号键）、播放/暂停（P）、全屏（F）、弹幕输入（Enter），以及刷新后的设置持久化和画质切换。
+
 ## 更新历史
 - v0.1  2017-01-31 - 双击全屏，倍数播放
 - v0.2  2017-01-31 - 调节倍数播放有提示

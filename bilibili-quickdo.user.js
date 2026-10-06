@@ -541,9 +541,10 @@
             e.defaultPrevented;
         },
         bindDanmuInputKeydown() {
-            q(SELECTOR.dmInput).on('keydown', e => {
+            this.dmInputKeydownFn = this.dmInputKeydownFn || (e => {
                 e.keyCode === KEY_BOARD.keyCode.enter && this.hideDanmuInput();
             });
+            q(SELECTOR.dmInput).on('keydown', this.dmInputKeydownFn);
         },
         getControllerConfigStatus(key) {
             return STORAGE.getControllerConfigStatus(key, this.config[key].status);
@@ -772,10 +773,14 @@
             return STORAGE.checkEndedSetting(key, this.endCheckbox.options[key].status);
         },
         trigger(mutation, target) {
+            const addedNode = mutation.addedNodes[0];
+            if (!addedNode || addedNode.nodeType !== Node.ELEMENT_NODE) {
+                return;
+            }
             if (target.hasClass('bpx-player-control-bottom-right')) {
-                if (mutation.addedNodes[0].className == 'bpx-player-ctrl-btn bpx-player-ctrl-quality') {
+                if (q(addedNode).hasClass('bpx-player-ctrl-quality')) {
                     this.videoQuality();
-                } else if (mutation.addedNodes.length == 1 && mutation.addedNodes[0].className.indexOf('bpx-player-ctrl-full') > 0) {
+                } else if (mutation.addedNodes.length == 1 && q(addedNode).hasClass('bpx-player-ctrl-full')) {
                     this.playStartMode();
                 }
             } else if (target.hasClass('bpx-player-state-buff-icon')) {
@@ -795,16 +800,15 @@
             UI.rConCss();
         },
         init() {
-            window.addEventListener('resize', () => {
-                this.adjustUI();
-            });
-
-            H5_PLAYER.addEventListener('loadeddata', () => {
+            const loadedData = () => {
+                H5_PLAYER.played = false;
                 this.checkPlayerSetting('hideSenderBar') && UI.hideSenderBar();
                 this.checkPlayerSetting('bottomTitle') && UI.bottomTitle();
                 this.checkPlayingSetting('moreDescribe') && this.moreDescribe();
                 this.playStartMode();
-            });
+                this.videoQuality();
+            };
+            H5_PLAYER.addEventListener('loadeddata', loadedData);
             H5_PLAYER.addEventListener('timeupdate', () => {
                 REPEAT_CONTROLLER.check() && REPEAT_CONTROLLER.start();
             });
@@ -831,7 +835,9 @@
                     CONTROLLER.mode(WIDESCREEN);
                 }
             });
-
+            if (H5_PLAYER.h5Player[0].readyState >= 2) {
+                loadedData();
+            }
         },
         playStartMode() {
             if (this.checkPlayingSetting('webFullscreen')) {
@@ -892,6 +898,9 @@
     };
     const SETTING_PANEL = {
         init() {
+            if (this.settingPanel && this.settingPanel[0].isConnected) {
+                return;
+            }
             this.newSettingPanel();
             ['playerCheckbox', 'startCheckbox', 'endCheckbox'].forEach(configName => {
                 for (let [key, { text, status, ban, fn, tips }] of Object.entries(AUTOMATON[configName].options)) {
@@ -986,39 +995,47 @@
             this.settingPanel.getCss('display') == 'none' ? this.show() : this.close();
         }
     };
+    function initPlayer() {
+        const video = q(SELECTOR.h5Player)[0];
+        if (!video || !q(SELECTOR.playerControl).length || !q(SELECTOR.playerVideoArea).length) {
+            return false;
+        }
+        if (!H5_PLAYER.h5Player || H5_PLAYER.h5Player[0] !== video) {
+            H5_PLAYER.init();
+            CONTROLLER.initKeyDown();
+            SETTING_PANEL.init();
+            AUTOMATON.init();
+            console.log('bilibili-quickdo done');
+        } else {
+            SETTING_PANEL.init();
+        }
+        CONTROLLER.bindDanmuInputKeydown();
+        return true;
+    }
     new MutationObserver((mutations, observer) => {
+        if (!initPlayer()) {
+            return;
+        }
         mutations.forEach(mutation => {
             const target = q(mutation.target);
             if (target.hasClass('fixed-header')) {
                 UI.removeFixedHeader();
             }
-            if (target.hasClass('header-v2')) {
-                if (H5_PLAYER.h5Player) {
-                    H5_PLAYER.played = false;
-                    return;
-                }
-                try {
-                    H5_PLAYER.init();
-                    CONTROLLER.initKeyDown();
-                    AUTOMATON.init();
-                    SETTING_PANEL.init();
-                    console.log('bilibili-quickdo done');
-                } catch (e) {
-                    console.error('bilibili-quickdo init error:', e);
-                }
-            } else if (target.hasClass('bpx-player-sending-bar') && mutation.addedNodes.length) {
-                CONTROLLER.bindDanmuInputKeydown();
-            } else {
-                AUTOMATON.trigger(mutation, target);
-            }
+            AUTOMATON.trigger(mutation, target);
         });
     }).observe(document.body, {
         childList: true,
         subtree: true,
     });
     new MutationObserver((mutations, observer) => {
-        AUTOMATON.attributesTrigger();
+        H5_PLAYER.h5Player && AUTOMATON.attributesTrigger();
     }).observe(document.body, {
         attributes: true,
+        subtree: true,
+        attributeFilter: ['data-screen'],
     });
+    window.addEventListener('resize', () => {
+        H5_PLAYER.h5Player && AUTOMATON.adjustUI();
+    });
+    initPlayer();
 })();
