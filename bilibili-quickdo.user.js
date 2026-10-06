@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bilibili H5播放器快捷操作
 // @namespace    https://github.com/jeayu/bilibili-quickdo
-// @version      0.9.9.9
+// @version      1.0.0
 // @description  快捷键设置,回车快速发弹幕,双击全屏,自动选择最高清画质、播放、全屏、关闭弹幕、自动转跳和自动关灯等
 // @author       jeayu
 // @license      MIT
@@ -110,7 +110,7 @@
                 return {top: 0, left: 0};
             }
             const rect = nodes[index].getBoundingClientRect();
-            return {top: rect.top + document.body.scrollTop, left: rect.left + document.body.scrollLeft}
+            return {top: rect.top + window.scrollY, left: rect.left + window.scrollX}
         }
         nodes.parseFloat = function (css, index = 0) {
             return (parseFloat(this.getCss(css, index)) || 0);
@@ -328,7 +328,7 @@
             this.h5Player[0].currentTime += this.getVarSetting('videoProgress');
         },
         offsetTop() {
-            return this.h5Player.offset().top;
+            return q('#bilibili-player').offset().top;
         }
     };
     const UI = {
@@ -442,15 +442,19 @@
             this.addStyle(css, 'qd-rCon');
         },
         bottomTitle() {
-            q('#viewbox_report').after(q('#playerWrap')[0]);
             if (!this.isBottomTitle) {
-                const css = `#viewbox_report {height:auto!important;}`;
+                // 保留页面管理的 DOM 顺序，避免干扰原生组件更新。
+                const css = `
+                .left-container:has(> #playerWrap):has(> #viewbox_report),
+                .l-con:has(> #playerWrap):has(> #viewbox_report) {
+                    display:flex;flex-direction:column;
+                }
+                #playerWrap {order:-1;}
+                #viewbox_report {height:auto!important;}
+                `;
                 this.addStyle(css, 'qd-bottomTitle');
                 this.isBottomTitle = true;
             }
-        },
-        removeFixedHeader() {
-            q('.bili-header').removeClass('fixed-header');
         },
     };
     const REPEAT_CONTROLLER = {
@@ -700,8 +704,21 @@
             q(SELECTOR.jumpContent).click();
         },
         playerSetOnTop() {
-            this.scroll2Top();
-            window.scrollTo(0, H5_PLAYER.offsetTop());
+            const mode = q(SELECTOR.playerContainer).attr('data-screen');
+            if (mode == FULLSCREEN || mode == WEBFULLSCREEN) {
+                return;
+            }
+            const header = q('.bili-header__bar');
+            if (!header.length || header.getCss('display') == 'none' || header.getCss('visibility') == 'hidden') {
+                return;
+            }
+            const height = header[0].getBoundingClientRect().height;
+            if (!height) {
+                return;
+            }
+            const position = header.getCss('position');
+            const top = position == 'fixed' || position == 'sticky' ? H5_PLAYER.offsetTop() - height : 0;
+            window.scrollTo(0, Math.max(0, top));
         },
         setRepeatStart() {
             REPEAT_CONTROLLER.setRepeatStart();
@@ -1018,11 +1035,11 @@
         }
         mutations.forEach(mutation => {
             const target = q(mutation.target);
-            if (target.hasClass('fixed-header')) {
-                UI.removeFixedHeader();
-            }
             AUTOMATON.trigger(mutation, target);
         });
+        if (mutations.some(mutation => mutation.target.id == 'biliMainHeader')) {
+            AUTOMATON.adjustUI();
+        }
     }).observe(document.body, {
         childList: true,
         subtree: true,
