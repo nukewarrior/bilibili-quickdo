@@ -3,7 +3,7 @@
 // @namespace    https://github.com/jeayu/bilibili-quickdo
 // @version      1.0.1
 // @description  快捷键设置,回车快速发弹幕,双击全屏,自动选择最高清画质、播放、全屏、关闭弹幕、自动转跳和自动关灯等
-// @author       jeayu
+// @author       jeayu (original), nukewarrior (maintainer)
 // @license      MIT
 // @match        *://www.bilibili.com/video/av*
 // @match        *://www.bilibili.com/video/bv*
