@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bilibili H5播放器快捷操作
 // @namespace    https://github.com/jeayu/bilibili-quickdo
-// @version      1.0.0
+// @version      1.0.1
 // @description  快捷键设置,回车快速发弹幕,双击全屏,自动选择最高清画质、播放、全屏、关闭弹幕、自动转跳和自动关灯等
 // @author       jeayu
 // @license      MIT
@@ -18,7 +18,6 @@
         let nodes = [];
         if (typeof selector === 'string') {
             Object.assign(nodes, document.querySelectorAll(selector));
-            nodes.selectorStr = selector;
         } else if (selector instanceof NodeList) {
             Object.assign(nodes, selector);
         } else if (selector instanceof Node) {
@@ -26,14 +25,6 @@
         }
         nodes.click = function (index = 0) {
             nodes.length > index && nodes[index].click();
-            return this;
-        }
-        nodes.addClass = function (classes, index = 0) {
-            nodes.length > index && nodes[index].classList.add(classes);
-            return this;
-        }
-        nodes.removeClass = function (classes, index = 0) {
-            nodes.length > index && nodes[index].classList.remove(classes);
             return this;
         }
         nodes.text = function (index = 0) {
@@ -45,12 +36,6 @@
         }
         nodes.getCss = function (name, index = 0) {
             return nodes.length > index && nodes[index].ownerDocument.defaultView.getComputedStyle(nodes[index], null).getPropertyValue(name);
-        }
-        nodes.mouseover = function (index = 0) {
-            return this.trigger('mouseover', index);
-        }
-        nodes.mouseout = function (index = 0) {
-            return this.trigger('mouseout', index);
         }
         nodes.attr = function (name, index = 0) {
             const result = nodes.length > index ? nodes[index].attributes[name] : undefined;
@@ -66,25 +51,11 @@
         nodes.find = function (name, index = 0) {
             return q(nodes[index].querySelectorAll(name));
         }
-        nodes.toggleClass = function (className, flag, index = 0) {
-            return flag ? this.addClass(className, index) : this.removeClass(className, index);
-        }
-        nodes.next = function (index = 0) {
-            return nodes.length > index && nodes[index].nextElementSibling ? q(nodes[index].nextElementSibling) : [];
-        }
-        nodes.prev = function (index = 0) {
-            return nodes.length > index && nodes[index].previousElementSibling ? q(nodes[index].previousElementSibling) : [];
-        }
         nodes.trigger = function (event, index = 0) {
             if (nodes.length > index) {
-                const evt = document.createEvent('Event');
-                evt.initEvent(event, true, true);
-                nodes[index].dispatchEvent(evt);
+                nodes[index].dispatchEvent(new Event(event, { bubbles: true, cancelable: true }));
             }
             return this;
-        }
-        nodes.last = function () {
-            return q(nodes[nodes.length - 1]);
         }
         nodes.on = function (event, fn, useCapture=false, index = 0) {
             nodes.length > index && nodes[index].addEventListener(event, fn, useCapture);
@@ -114,10 +85,6 @@
         }
         nodes.parseFloat = function (css, index = 0) {
             return (parseFloat(this.getCss(css, index)) || 0);
-        }
-        nodes.after = function (node, index = 0) {
-            nodes.length > index && node instanceof Node && nodes[index].parentNode.insertBefore(node, nodes[index]);
-            return this;
         }
         return nodes;
     }
@@ -262,15 +229,6 @@
         addEventListener(event, func) {
             this.h5Player.on(event, func);
         },
-        addPlayingEvent(func) {
-            this.addEventListener('playing', func);
-        },
-        addPauseEvent(func) {
-            this.addEventListener('pause', func);
-        },
-        addEndedEvent(func) {
-            this.addEventListener('ended', func);
-        },
         getDuration() {
             return this.h5Player[0].duration;
         },
@@ -372,9 +330,6 @@
             q(SELECTOR.playerVideoArea).append(html);
         },
         hideSenderBar() {
-            this.hideSenderBarCss();
-        },
-        hideSenderBarCss() {
             const css = `${SELECTOR.senderBarArea}{opacity: 0!important;display: none!important}`;
             this.addStyle(css, 'qd-hideSenderBar');
         },
@@ -394,14 +349,10 @@
             this.setH5PlayerRransform(transform);
         },
         setH5PlayerRransform(transform) {
-            H5_PLAYER.h5Player.css('-webkit-transform', transform)
-                .css('-moz-transform', transform)
-                .css('-ms-transform', transform)
-                .css('-o-transform', transform)
-                .css('transform', transform);
+            H5_PLAYER.h5Player.css('transform', transform);
         },
         getTransformCss(e) {
-            return e.getCss('-webkit-transform') || e.getCss('-moz-transform') || e.getCss('-ms-transform') || e.getCss('-o-transform') || 'none';
+            return e.getCss('transform') || 'none';
         },
         getRotationDeg(e) {
             const transformCss = this.getTransformCss(e);
@@ -481,9 +432,8 @@
     };
     const CONTROLLER = {
         keydownFn: undefined,
-        hintTimer: undefined,
         config: {
-            globalHotKey: { text: '快捷键设置全局', status: OFF, tips: '上下左右空格不会滚动页面' },
+            globalHotKey: { text: '快捷键设置全局', status: OFF },
         },
         quickDo: {
             settingPanel: { value: '`', text: '设置面板', },
@@ -542,7 +492,6 @@
             Object.keys(this.quickDo)
                 .some(quickDoKey => keyCode === this.getQuickDoKeyCode(quickDoKey) && (!this[quickDoKey]() || !e.preventDefault())) ||
                 this.numberKeySkip(keyCode);
-            e.defaultPrevented;
         },
         bindDanmuInputKeydown() {
             this.dmInputKeydownFn = this.dmInputKeydownFn || (e => {
@@ -588,10 +537,6 @@
                 case DEFAULT: return curMode == MINI ? q(SELECTOR.playerContainer)[0].setAttribute('data-screen', DEFAULT) : this.mode(curMode, false);
                 default: return;
             }
-        },
-        ultraWidescreen() {
-            this.mode(WIDESCREEN);
-            UI.ultraWidescreenCss();
         },
         // ---------------
         settingPanel() {
@@ -748,37 +693,34 @@
     const AUTOMATON = {
         playerCheckbox: {
             options: {
-                hideSenderBar: { text: '隐藏弹幕栏', status: ON, fn: 'hideOrShowSenderBar', tips: '发弹幕快捷键可显示' },
-                widescreenScroll2Top: { text: '宽屏时回到顶部', status: OFF, ban:['widescreenPlayerSetOnTop'], fn: 'setWidescreenPos' },
-                widescreenPlayerSetOnTop: { text: '宽屏时播放器置顶部', status: ON, ban:['widescreenScroll2Top'], fn: 'setWidescreenPos' },
+                hideSenderBar: { text: '隐藏弹幕栏', status: ON },
+                widescreenScroll2Top: { text: '宽屏时回到顶部', status: OFF },
+                widescreenPlayerSetOnTop: { text: '宽屏时播放器置顶部', status: ON },
                 lightOffWhenPlaying: { text: '播放时自动关灯', status: OFF, },
                 lightOnWhenPause: { text: '暂停时自动开灯', status: OFF, },
                 screenWhenPause: { text: '暂停还原屏幕', status: OFF, },
-                ultraWidescreen: { text: '超宽屏', status: ON, fn: 'ultraWidescreen', tips: '宽屏模式宽度和窗口一样'},
-                bottomTitle: { text: '标题位于播放器下方', status: ON, tips: '刷新生效' },
+                ultraWidescreen: { text: '超宽屏', status: ON },
+                bottomTitle: { text: '标题位于播放器下方', status: ON },
             },
-            btn: '播放器设置',
         },
         startCheckbox: {
             options: {
                 lightOff: { text: '自动关灯', status: OFF },
-                webFullscreen: { text: '自动网页全屏', status: OFF, ban:['widescreen'] },
-                widescreen: { text: '自动宽屏', status: ON, ban:['webFullscreen'] },
-                highQuality: { text: '自动最高画质', status: ON, ban:['vipHighQuality'] },
-                vipHighQuality: { text: '自动最高画质(大会员使用)', status: OFF, ban:['highQuality'] },
+                webFullscreen: { text: '自动网页全屏', status: OFF },
+                widescreen: { text: '自动宽屏', status: ON },
+                highQuality: { text: '自动最高画质', status: ON },
+                vipHighQuality: { text: '自动最高画质(大会员使用)', status: OFF },
                 vipHighQualityNot4K: { text: '自动最高画质不选择4K', status: OFF },
                 moreDescribe: { text: '自动展开视频简介', status: ON },
             },
-            btn: '播放前自动设置',
         },
         endCheckbox: {
             options: {
-                lightOn: { text: '播放结束自动开灯', status: ON, tips: '还有下一P不触发' },
-                exitScreen: { text: '播放结束还原屏幕', status: ON, ban:['exit2WideScreen'], tips: '还有下一P不触发' },
-                exit2WideScreen: { text: '播放结束还原宽屏', status: OFF, ban:['exitScreen'], tips: '还有下一P不触发' },
+                lightOn: { text: '播放结束自动开灯', status: ON },
+                exitScreen: { text: '播放结束还原屏幕', status: ON },
+                exit2WideScreen: { text: '播放结束还原宽屏', status: OFF },
                 autoJumpContent: { text: '跳过充电鸣谢', status: ON },
             },
-            btn: '播放结束自动设置',
         },
         checkPlayingSetting(key) {
             return STORAGE.checkPlayingSetting(key, this.startCheckbox.options[key].status);
@@ -804,9 +746,6 @@
                 UI.rConCss();
             }
         },
-        attributesTrigger() {
-            this.adjustUI();
-        },
         adjustUI() {
             this.checkPlayerSetting('ultraWidescreen') && UI.ultraWidescreenCss();
             if (this.checkPlayerSetting('widescreenScroll2Top') && UI.isWide()) {
@@ -829,7 +768,7 @@
             H5_PLAYER.addEventListener('timeupdate', () => {
                 REPEAT_CONTROLLER.check() && REPEAT_CONTROLLER.start();
             });
-            H5_PLAYER.addPlayingEvent(() => {
+            H5_PLAYER.addEventListener('playing', () => {
                 if (!H5_PLAYER.played) {
                     this.checkPlayingSetting('lightOff') && CONTROLLER.light(OFF);
                 }
@@ -837,12 +776,12 @@
                 H5_PLAYER.played = true;
             });
 
-            H5_PLAYER.addPauseEvent(() => {
+            H5_PLAYER.addEventListener('pause', () => {
                 this.checkPlayerSetting('lightOnWhenPause') && CONTROLLER.light(ON);
                 this.checkPlayerSetting('screenWhenPause') && CONTROLLER.mode(DEFAULT);
             });
 
-            H5_PLAYER.addEndedEvent(() => {
+            H5_PLAYER.addEventListener('ended', () => {
                 this.checkEndedSetting('lightOn') && CONTROLLER.light(ON);
                 this.checkEndedSetting('autoJumpContent') && CONTROLLER.jumpContent();
 
@@ -904,10 +843,7 @@
             return `${this.version}:${configName}:${key}`;
         },
         get(configName, key, defaultValue) {
-            if (GM_getValue(this.gmKey(configName, key)) == undefined) {
-                return defaultValue;
-            }
-            return GM_getValue(this.gmKey(configName, key));
+            return GM_getValue(this.gmKey(configName, key)) ?? defaultValue;
         },
         save(configName, key, value) {
             GM_setValue(this.gmKey(configName, key), value);
@@ -920,18 +856,18 @@
             }
             this.newSettingPanel();
             ['playerCheckbox', 'startCheckbox', 'endCheckbox'].forEach(configName => {
-                for (let [key, { text, status, ban, fn, tips }] of Object.entries(AUTOMATON[configName].options)) {
-                    this.addCheckboxSettingItem(configName, key, text, status, ban, fn, tips);
+                for (let [key, { text, status }] of Object.entries(AUTOMATON[configName].options)) {
+                    this.addCheckboxSettingItem(configName, key, text, status);
                 }
             });
             for (let [key, { value, text }] of Object.entries(CONTROLLER.quickDo)) {
                 this.addInputSettingItem('quickDo', key, value, text);
             }
-            for (let [key, { text, status, tips }] of Object.entries(CONTROLLER.config)) {
-                this.addCheckboxSettingItem('controllerConfig', key, text, status, null, null, null);
+            for (let [key, { text, status }] of Object.entries(CONTROLLER.config)) {
+                this.addCheckboxSettingItem('controllerConfig', key, text, status);
             }
             for (let [key, { text, status, bindKey }] of Object.entries(KEY_BOARD.defaultShortCut)) {
-                this.addCheckboxSettingItem("defaultShortCut", key, `屏蔽${text}`, status, null, null, null);
+                this.addCheckboxSettingItem("defaultShortCut", key, `屏蔽${text}`, status);
             }
 
         },
@@ -958,7 +894,7 @@
             })
             this.close();
         },
-        addCheckboxSettingItem(configName, key, text, status, ban, fn, tips) {
+        addCheckboxSettingItem(configName, key, text, status) {
             const checked = STORAGE.get(configName, key, status) == ON ? 'checked' : '';
             const checkboxId = `${configName}-${key}-box`;
             let item = `
@@ -1045,7 +981,7 @@
         subtree: true,
     });
     new MutationObserver((mutations, observer) => {
-        H5_PLAYER.h5Player && AUTOMATON.attributesTrigger();
+        H5_PLAYER.h5Player && AUTOMATON.adjustUI();
     }).observe(document.body, {
         attributes: true,
         subtree: true,

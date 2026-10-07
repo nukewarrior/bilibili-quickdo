@@ -35,14 +35,18 @@ function run(ready) {
     }
     if (ready) mount();
     const observers = [];
-    const calls = { panel: 0, start: 0, hide: 0, resize: 0, input: 0 };
+    const calls = { panel: 0, start: 0, hide: 0, resize: 0, input: 0, reads: 0 };
+    const storedValues = new Map();
     let modules;
     let layout;
     const window = new Element();
     const context = {
-        document, window, Node: Element, NodeList: Array, setTimeout, clearTimeout,
-        GM_getValue: () => undefined,
-        GM_setValue: () => {},
+        document, window, Node: Element, NodeList: Array, Event, setTimeout, clearTimeout,
+        GM_getValue: key => {
+            calls.reads++;
+            return storedValues.get(key);
+        },
+        GM_setValue: (key, value) => storedValues.set(key, value),
         console: { log() {}, error(message, error) { throw error; } },
         MutationObserver: class {
             constructor(callback) { observers.push(this); this.callback = callback; }
@@ -69,9 +73,10 @@ function run(ready) {
     const marker = '    new MutationObserver((mutations, observer) => {';
     assert.ok(source.includes(marker), 'bootstrap observer must exist');
     vm.runInNewContext(source.replace(marker,
-        '    testSetup({H5_PLAYER, CONTROLLER, AUTOMATON, SETTING_PANEL, UI, q});\n' + marker), context);
+        '    testSetup({H5_PLAYER, CONTROLLER, AUTOMATON, SETTING_PANEL, STORAGE, UI, q});\n' + marker), context);
     const mutate = (records = []) => observers[0].callback(records);
-    return { video, input, nodes, document, window, modules, layout, calls, mount, mutate, Element };
+    const mutateAttributes = () => observers[1].callback([]);
+    return { video, input, nodes, document, window, modules, layout, calls, storedValues, mount, mutate, mutateAttributes, Element };
 }
 
 const page = run(true);
@@ -96,6 +101,8 @@ replacement.dispatchEvent(new Event('loadeddata'));
 assert.equal(page.calls.start, before + 1, 'new media must receive startup settings');
 page.window.dispatchEvent(new Event('resize'));
 assert.equal(page.calls.resize, 1, 'video replacement must not duplicate resize handlers');
+page.mutateAttributes();
+assert.equal(page.calls.resize, 2, 'screen changes must still adjust the UI');
 const mute = new Event('keydown', { cancelable: true });
 Object.defineProperty(mute, 'keyCode', { value: 77 });
 page.document.dispatchEvent(mute);
@@ -116,6 +123,8 @@ page.mutate([{ target, addedNodes: [{ nodeType: 3 }] }]);
 
 const delayed = run(false);
 assert.equal(delayed.calls.panel, 0, 'wait until the player is mounted');
+delayed.mutateAttributes();
+assert.equal(delayed.calls.resize, 0, 'screen changes must wait for player initialization');
 delayed.mount();
 delayed.nodes.delete('.bpx-player-control-wrap');
 delayed.mutate();
@@ -218,4 +227,105 @@ page.modules.CONTROLLER.playerSetOnTop = () => assert.fail('return to top must t
 page.layout.adjustUI.call(page.modules.AUTOMATON);
 assert.equal(returnToTop, true, 'existing positioning option priority must be preserved');
 
-console.log('player initialization and layout checks passed');
+const storagePage = run(true);
+for (const value of [undefined, null, 0, 1, false, '']) {
+    storagePage.modules.STORAGE.save('quickDo', 'mute', value);
+    assert.equal(storagePage.storedValues.get('v1:quickDo:mute'), value, 'keep the existing storage key');
+    const reads = storagePage.calls.reads;
+    assert.equal(storagePage.modules.STORAGE.get('quickDo', 'mute', 'm'), value == null ? 'm' : value,
+        'only null and undefined must fall back to the default');
+    assert.equal(storagePage.calls.reads, reads + 1, 'read each setting once');
+}
+
+const eventNodes = [new page.Element(), new page.Element()];
+const events = [];
+for (const [index, node] of eventNodes.entries()) {
+    for (const type of ['mouseover', 'mouseout']) {
+        node.addEventListener(type, event => {
+            assert.equal(event.bubbles, true);
+            assert.equal(event.cancelable, true);
+            assert.equal(event.composed, false);
+            event.preventDefault();
+            assert.equal(event.defaultPrevented, true);
+            events.push([index, event.type]);
+        });
+    }
+}
+const wrapped = page.modules.q(eventNodes);
+assert.equal(wrapped.trigger('mouseover'), wrapped, 'event dispatch must remain chainable');
+assert.equal(wrapped.trigger('mouseout', 1), wrapped, 'event dispatch must honor the node index');
+const empty = page.modules.q('#missing');
+assert.equal(empty.trigger('mouseover'), empty, 'empty selections must remain chainable');
+assert.equal(wrapped.trigger('mouseout', 2), wrapped, 'missing node indexes must not dispatch');
+assert.deepEqual(events, [[0, 'mouseover'], [1, 'mouseout']]);
+
+const lifecycle = run(true);
+const actions = [];
+for (const [config, key] of [
+    ['startCheckbox', 'lightOff'],
+    ['playerCheckbox', 'lightOnWhenPause'],
+    ['playerCheckbox', 'screenWhenPause'],
+]) {
+    lifecycle.modules.STORAGE.save(config, key, 1);
+}
+lifecycle.modules.CONTROLLER.light = status => actions.push(['light', status]);
+lifecycle.modules.CONTROLLER.mode = mode => actions.push(['mode', mode]);
+lifecycle.modules.CONTROLLER.jumpContent = () => actions.push(['jump']);
+const currentVideo = new lifecycle.Element();
+lifecycle.mount(currentVideo);
+lifecycle.mutate();
+lifecycle.mutate();
+for (const type of ['playing', 'playing', 'pause', 'ended']) {
+    currentVideo.dispatchEvent(new Event(type));
+}
+assert.equal(lifecycle.modules.H5_PLAYER.played, true);
+assert.deepEqual(actions, [
+    ['light', 0], ['light', 1], ['mode', 'normal'],
+    ['light', 1], ['jump'], ['mode', 'normal'],
+], 'replacement video must run each enabled action once and startup lighting only on first play');
+
+const transformPage = run(true);
+const transforms = [];
+let computedTransform = 'none';
+transformPage.video.style = { setProperty: (name, value) => transforms.push([name, value]) };
+transformPage.video.ownerDocument = { defaultView: { getComputedStyle: () => ({
+    getPropertyValue(name) {
+        assert.equal(name, 'transform', 'read the standard transform property');
+        return computedTransform;
+    },
+}) } };
+transformPage.video.videoWidth = 1920;
+transformPage.video.videoHeight = 1080;
+transformPage.modules.CONTROLLER.rotateRight();
+transformPage.modules.CONTROLLER.rotateLeft();
+assert.deepEqual(transforms, [
+    ['transform', 'rotate(90deg) scale(0.5625)'],
+    ['transform', 'rotate(-90deg) scale(0.5625)'],
+]);
+for (const [matrix, degrees] of [
+    ['none', 0],
+    ['matrix(1, 0, 0, 1, 0, 0)', 0],
+    ['matrix(0, 1, -1, 0, 0, 0)', 90],
+    ['matrix(0, -1, 1, 0, 0, 0)', -90],
+    ['matrix(-1, 0, 0, -1, 0, 0)', 180],
+]) {
+    computedTransform = matrix;
+    assert.equal(transformPage.modules.UI.getRotationDeg(transformPage.modules.H5_PLAYER.h5Player), degrees);
+}
+computedTransform = 'matrix(0, 1, -1, 0, 0, 0)';
+transformPage.modules.CONTROLLER.rotateRight();
+assert.deepEqual(transforms.at(-1), ['transform', 'rotate(180deg) scale(1)']);
+transformPage.modules.CONTROLLER.rotateLeft();
+assert.deepEqual(transforms.at(-1), ['transform', 'rotate(0deg) scale(1)']);
+const mirror = new transformPage.Element();
+let mirrorClicks = 0;
+mirror.click = () => {
+    assert.deepEqual(transforms.at(-1), ['transform', ''], 'clear rotation before toggling the mirror');
+    mirrorClicks++;
+};
+transformPage.nodes.set('.bpx-player-ctrl-setting-mirror input', [mirror]);
+transformPage.modules.CONTROLLER.mirror();
+assert.deepEqual(transforms.at(-1), ['transform', '']);
+assert.equal(mirrorClicks, 1, 'mirror must clear rotation before toggling the native control');
+
+console.log('player initialization, layout, storage, event and transform checks passed');
