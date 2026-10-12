@@ -99,6 +99,18 @@ assert.equal(page.calls.panel, 1, 'video replacement must reuse the connected pa
 const before = page.calls.start;
 replacement.dispatchEvent(new Event('loadeddata'));
 assert.equal(page.calls.start, before + 1, 'new media must receive startup settings');
+replacement.duration = 100;
+replacement.currentTime = 37;
+const commandOne = new Event('keydown', { cancelable: true });
+Object.defineProperty(commandOne, 'keyCode', { value: 49 });
+Object.defineProperty(commandOne, 'metaKey', { value: true });
+page.document.dispatchEvent(commandOne);
+assert.equal(replacement.currentTime, 37, 'Command+1 must not seek the video');
+assert.equal(commandOne.defaultPrevented, false, 'Command+1 must remain available to the browser');
+const one = new Event('keydown', { cancelable: true });
+Object.defineProperty(one, 'keyCode', { value: 49 });
+page.document.dispatchEvent(one);
+assert.equal(replacement.currentTime, 10, 'plain 1 must still seek to 10%');
 page.window.dispatchEvent(new Event('resize'));
 assert.equal(page.calls.resize, 1, 'video replacement must not duplicate resize handlers');
 page.mutateAttributes();

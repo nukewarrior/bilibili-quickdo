@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bilibili H5播放器快捷操作
 // @namespace    https://github.com/jeayu/bilibili-quickdo
-// @version      1.0.1
+// @version      1.0.2
 // @description  快捷键设置,回车快速发弹幕,双击全屏,自动选择最高清画质、播放、全屏、关闭弹幕、自动转跳和自动关灯等
 // @author       jeayu (original), nukewarrior (maintainer)
 // @license      MIT
@@ -475,8 +475,8 @@
             console.log('initKeyDown done');
         },
         keyHandler(e) {
-            const {keyCode, ctrlKey, shiftKey, altKey} = e;
-            if (ctrlKey || shiftKey || altKey) {
+            const {keyCode, ctrlKey, shiftKey, altKey, metaKey} = e;
+            if (ctrlKey || shiftKey || altKey || metaKey) {
                 return;
             }
             if (KEY_BOARD.checkDefaultShortCut(keyCode)) {
