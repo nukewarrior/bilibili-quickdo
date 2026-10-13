@@ -272,12 +272,18 @@ const changeScreen = value => {
 };
 sidebarUI.rConCss();
 assert.equal(sidebarMargin(), '650', 'sidebar spacing must use the page placeholder instead of the inset video');
+assert.match(sidebar.nodes.get('#qd-rCon')[0].textContent, /\.right-container #danmukuBox\{margin-top:0!important\}/,
+    'wide-page spacing must cancel the native danmaku-list top gap inside the shifted sidebar');
 assert.equal(sidebar.observers[1].options.attributeOldValue, true, 'screen observation must capture transitions out of mini mode');
 changeScreen('mini');
 assert.equal(sidebarMargin(), '650', 'entering mini mode must retain wide-page spacing');
+assert.match(sidebar.nodes.get('#qd-rCon')[0].textContent, /\.right-container #danmukuBox\{margin-top:0!important\}/,
+    'wide-page mini mode must retain the danmaku-list gap reset');
 placeholderHeight = 720;
 sidebar.window.dispatchEvent(new Event('resize'));
 assert.equal(sidebarMargin(), '720', 'resizing in mini mode must update spacing from the placeholder');
+assert.match(sidebar.nodes.get('#qd-rCon')[0].textContent, /\.right-container #danmukuBox\{margin-top:0!important\}/,
+    'resizing in mini mode must retain the danmaku-list gap reset');
 changeScreen('wide');
 assert.equal(sidebarMargin(), '720', 'leaving mini mode must retain page spacing');
 assert.deepEqual(positioning, [], 'mini transitions and mini resizing must not automatically scroll');
@@ -287,8 +293,10 @@ assert.deepEqual(positioning, [], 'recommendation previews must not trigger play
 assert.equal(sidebarMargin(), '720', 'recommendation previews must not change sidebar spacing');
 changeScreen('normal');
 assert.equal(sidebarMargin(), undefined, 'leaving wide mode must remove custom spacing');
+assert.equal(sidebar.nodes.has('#qd-rCon'), false, 'normal mode must restore native danmaku-list spacing');
 changeScreen('mini');
 assert.equal(sidebarMargin(), undefined, 'normal-page mini mode must not add wide spacing');
+assert.equal(sidebar.nodes.has('#qd-rCon'), false, 'normal-page mini mode must not reset native danmaku-list spacing');
 changeScreen('normal');
 assert.deepEqual(positioning, [], 'normal-page mini transitions must not automatically scroll');
 changeScreen('wide');
