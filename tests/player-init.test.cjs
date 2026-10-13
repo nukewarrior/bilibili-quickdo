@@ -22,12 +22,16 @@ function run(ready) {
     const control = new Element();
     const area = new Element();
     const sender = new Element();
+    const container = new Element();
+    container.attributes = { 'data-screen': { value: 'wide' } };
     const document = new Element();
     document.body = new Element();
     const nodes = new Map();
     document.querySelectorAll = selector => nodes.get(selector) || [];
     function mount(player = video) {
         nodes.set('#bilibili-player video', [player]);
+        nodes.set('#bilibili-player .bpx-player-container', [container]);
+        nodes.set('.bpx-player-container', [container]);
         nodes.set('.bpx-player-control-wrap', [control]);
         nodes.set('.bpx-player-video-area', [area]);
         nodes.set('.bpx-player-sending-area', [sender]);
@@ -50,7 +54,7 @@ function run(ready) {
         console: { log() {}, error(message, error) { throw error; } },
         MutationObserver: class {
             constructor(callback) { observers.push(this); this.callback = callback; }
-            observe() {}
+            observe(target, options) { this.options = options; }
         },
         testSetup(objects) {
             modules = objects;
@@ -75,8 +79,8 @@ function run(ready) {
     vm.runInNewContext(source.replace(marker,
         '    testSetup({H5_PLAYER, CONTROLLER, AUTOMATON, SETTING_PANEL, STORAGE, UI, q});\n' + marker), context);
     const mutate = (records = []) => observers[0].callback(records);
-    const mutateAttributes = () => observers[1].callback([]);
-    return { video, input, nodes, document, window, modules, layout, calls, storedValues, mount, mutate, mutateAttributes, Element };
+    const mutateAttributes = (records = [{ target: container, oldValue: 'normal' }]) => observers[1].callback(records);
+    return { video, input, container, nodes, document, window, modules, layout, calls, storedValues, mount, mutate, mutateAttributes, observers, Element };
 }
 
 const page = run(true);
@@ -238,6 +242,62 @@ page.modules.CONTROLLER.scroll2Top = () => { returnToTop = true; };
 page.modules.CONTROLLER.playerSetOnTop = () => assert.fail('return to top must take priority');
 page.layout.adjustUI.call(page.modules.AUTOMATON);
 assert.equal(returnToTop, true, 'existing positioning option priority must be preserved');
+
+const sidebar = run(true);
+const sidebarUI = sidebar.modules.UI;
+sidebarUI.isBottomTitle = true;
+sidebarUI.ultraWidescreenCss = () => {};
+sidebar.modules.AUTOMATON.adjustUI = sidebar.layout.adjustUI;
+const positioning = [];
+sidebar.modules.CONTROLLER.playerSetOnTop = () => positioning.push('player');
+sidebar.modules.CONTROLLER.scroll2Top = () => positioning.push('top');
+let placeholderHeight = 650;
+const placeholder = new sidebar.Element();
+placeholder.ownerDocument = { defaultView: { getComputedStyle: () => ({
+    getPropertyValue: name => name === 'height' ? `${placeholderHeight}px` : '',
+}) } };
+sidebar.nodes.set('#playerWrap', [placeholder]);
+sidebar.video.ownerDocument = { defaultView: { getComputedStyle: () => ({ getPropertyValue: () => '180px' }) } };
+sidebarUI.addStyle = (css, id) => {
+    const style = new sidebar.Element();
+    style.textContent = css;
+    style.parentNode = { removeChild: () => sidebar.nodes.delete(`#${id}`) };
+    sidebar.nodes.set(`#${id}`, [style]);
+};
+const sidebarMargin = () => sidebar.nodes.get('#qd-rCon')?.[0].textContent.match(/\.right-container\{margin-top:(\d+)px/)[1];
+const changeScreen = value => {
+    const oldValue = sidebar.container.attributes['data-screen'].value;
+    sidebar.container.attributes['data-screen'].value = value;
+    sidebar.mutateAttributes([{ target: sidebar.container, oldValue }]);
+};
+sidebarUI.rConCss();
+assert.equal(sidebarMargin(), '650', 'sidebar spacing must use the page placeholder instead of the inset video');
+assert.equal(sidebar.observers[1].options.attributeOldValue, true, 'screen observation must capture transitions out of mini mode');
+changeScreen('mini');
+assert.equal(sidebarMargin(), '650', 'entering mini mode must retain wide-page spacing');
+placeholderHeight = 720;
+sidebar.window.dispatchEvent(new Event('resize'));
+assert.equal(sidebarMargin(), '720', 'resizing in mini mode must update spacing from the placeholder');
+changeScreen('wide');
+assert.equal(sidebarMargin(), '720', 'leaving mini mode must retain page spacing');
+assert.deepEqual(positioning, [], 'mini transitions and mini resizing must not automatically scroll');
+const preview = new sidebar.Element();
+sidebar.mutateAttributes([{ target: preview, oldValue: 'normal' }]);
+assert.deepEqual(positioning, [], 'recommendation previews must not trigger player positioning');
+assert.equal(sidebarMargin(), '720', 'recommendation previews must not change sidebar spacing');
+changeScreen('normal');
+assert.equal(sidebarMargin(), undefined, 'leaving wide mode must remove custom spacing');
+changeScreen('mini');
+assert.equal(sidebarMargin(), undefined, 'normal-page mini mode must not add wide spacing');
+changeScreen('normal');
+assert.deepEqual(positioning, [], 'normal-page mini transitions must not automatically scroll');
+changeScreen('wide');
+assert.equal(sidebarMargin(), '720');
+assert.deepEqual(positioning, ['player'], 'explicit wide-mode changes must still apply player positioning');
+sidebar.modules.STORAGE.save('playerCheckbox', 'widescreenScroll2Top', 1);
+changeScreen('normal');
+changeScreen('wide');
+assert.deepEqual(positioning, ['player', 'top'], 'explicit wide-mode changes must preserve return-to-top priority');
 
 const storagePage = run(true);
 for (const value of [undefined, null, 0, 1, false, '']) {

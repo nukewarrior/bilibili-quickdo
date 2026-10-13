@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bilibili H5播放器快捷操作
 // @namespace    https://github.com/jeayu/bilibili-quickdo
-// @version      1.0.2
+// @version      1.0.3
 // @description  快捷键设置,回车快速发弹幕,双击全屏,自动选择最高清画质、播放、全屏、关闭弹幕、自动转跳和自动关灯等
 // @author       jeayu (original), nukewarrior (maintainer)
 // @license      MIT
@@ -381,11 +381,14 @@
             this.addStyle(css, 'qd-ultraWidescreen');
         },
         rConCss() {
+            const isMini = q('#bilibili-player .bpx-player-container').attr('data-screen') == MINI;
+            // 小窗沿用进入前的页面布局，偏移取占位高度而非悬浮视频高度。
+            const isWide = isMini ? q('#qd-rCon').length > 0 : this.isWide();
             this.removeStyle('#qd-rCon');
-            if (!this.isBottomTitle || !this.isWide()) {
+            if (!this.isBottomTitle || !isWide) {
                 return;
             }
-            const top = H5_PLAYER.h5Player.parseFloat('height');
+            const top = q('#playerWrap').parseFloat('height');
             const css = `
             .r-con{margin-top:${top}px!important}
             .right-container{margin-top:${top}px!important}
@@ -981,11 +984,24 @@
         subtree: true,
     });
     new MutationObserver((mutations, observer) => {
-        H5_PLAYER.h5Player && AUTOMATON.adjustUI();
+        if (!H5_PLAYER.h5Player) {
+            return;
+        }
+        const container = q('#bilibili-player .bpx-player-container');
+        const screenChanges = mutations.filter(mutation => mutation.target === container[0]);
+        if (!screenChanges.length) {
+            return;
+        }
+        if (container.attr('data-screen') == MINI || screenChanges.some(mutation => mutation.oldValue == MINI)) {
+            UI.rConCss();
+        } else {
+            AUTOMATON.adjustUI();
+        }
     }).observe(document.body, {
         attributes: true,
         subtree: true,
         attributeFilter: ['data-screen'],
+        attributeOldValue: true,
     });
     window.addEventListener('resize', () => {
         H5_PLAYER.h5Player && AUTOMATON.adjustUI();
